@@ -1,15 +1,13 @@
-// src/app/login/page.tsx
 "use client";
 
-import { useState } from 'react'; // <-- Hapus useEffect
+import { useState, Suspense } from 'react';
 import Link from 'next/link';
 import SintaFullLogo from '@/components/SintaFullLogo';
 import { useAuth } from '@/context/AuthContext';
 import { isAxiosError } from 'axios';
 import { useSearchParams } from 'next/navigation';
 
-// --- (PERBAIKAN #2) ---
-// Tambahkan komponen ikon mata di sini
+// Komponen Ikon Mata
 const EyeIcon = () => (
   <svg className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -22,189 +20,164 @@ const EyeOffIcon = () => (
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
   </svg>
 );
-// --- (AKHIR PERBAIKAN #2) ---
 
-
-export default function LoginPage() {
+function LoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   
   const { login } = useAuth();
   const searchParams = useSearchParams();
 
-  // --- (PERBAIKAN #1) ---
-  // Hapus useEffect dan useState. Baca langsung dari URL.
-  const roleId = searchParams.get('role');
-  const jenisId = searchParams.get('jenis');
-  // --- (AKHIR PERBAIKAN #1) ---
+  // Mapping parameter URL
+  const asParam = searchParams.get('as');
+  const roleParam = searchParams.get('role');
 
+  let userType: string | null = null;
+  if (asParam) userType = asParam;
+  else if (roleParam === '1') userType = 'admin';
+  else if (roleParam === '2') userType = 'pusdatin';
+  else if (roleParam === '3') userType = 'provinsi';
+  else if (roleParam === '4') userType = 'kota';
 
-const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setIsLoading(true);
+    
     try {
-      await login({ 
-        email, 
-        password,
-        role_id: roleId,
-        jenis_dlh_id: jenisId
-      });
-      // Redirect akan di-handle oleh AuthContext
+      await login({ email, password });
     } catch (err: unknown) {
       if (isAxiosError(err)) {
-        
-        // --- PERBAIKAN ERROR HANDLING DI SINI ---
-        let message = 'Login gagal. Silakan coba lagi.'; // Pesan default
-
-        // Cek apakah ada 'errors' object dari validasi Laravel
-        // Ini akan menangkap "Anda mencoba login di peran yang salah."
-        if (err.response?.data?.errors?.email) {
-          message = err.response.data.errors.email[0];
-        } 
-        // Fallback jika errornya ada di 'message' (bukan validasi)
-        else if (err.response?.data?.message) {
+        let message = 'Login gagal. Periksa email dan password Anda.';
+        if (err.response?.data?.message) {
           message = err.response.data.message;
+        } else if (err.response?.data?.errors?.email) {
+            message = err.response.data.errors.email[0];
         }
-        
         setError(message);
-        // --- AKHIR PERBAIKAN ---
-
       } else {
-        setError('Terjadi kesalahan yang tidak terduga.');
+        setError('Terjadi kesalahan koneksi atau server tidak merespons.');
       }
+    } finally {
+      setIsLoading(false);
     }
   };
 
-// Fungsi untuk render bagian "Daftar" secara dinamis
   const renderRegisterSection = () => {
-    // Jika roleId=2 (Pusdatin)
-    if (roleId === '2') {
-      return (
-        <div className="mt-8 text-sm text-center">
-          <p className="text-gray-600 mb-4">Belum memiliki akun?</p>
-          {/* UBAH INI MENJADI LINK KE HALAMAN BARU */}
-          <Link
-            href="/hubungi-admin" 
-            className="inline-block bg-[#00A86B] text-white font-bold py-3 px-6 rounded-lg shadow-sm hover:brightness-90 transition duration-300"
-          >
-            Hubungi Admin
-          </Link>
-        </div>
-      );
+    switch (userType) {
+      case 'pusdatin':
+        return (
+          <div className="mt-8 text-sm text-center">
+            <p className="text-gray-600 mb-2">Akun Pusdatin dibuat oleh Admin.</p>
+            <Link href="/hubungi-admin" className="text-[#00A86B] font-bold hover:underline">Hubungi Admin</Link>
+          </div>
+        );
+      case 'admin':
+        return (
+          <div className="mt-8 text-sm text-center">
+             <p className="text-gray-600">Login khusus Administrator.</p>
+          </div>
+        );
+      case 'provinsi':
+        return (
+          <div className="mt-8 text-sm text-center">
+            <p className="text-gray-600 mb-4">Belum punya akun Dinas Provinsi?</p>
+            <Link href="/register?role=provinsi" className="inline-block bg-[#00A86B] text-white font-bold py-3 px-6 rounded-lg hover:brightness-90 transition shadow-sm">
+              Daftar Akun Provinsi
+            </Link>
+          </div>
+        );
+      case 'kota':
+        return (
+          <div className="mt-8 text-sm text-center">
+            <p className="text-gray-600 mb-4">Belum punya akun Dinas Kab/Kota?</p>
+            <Link href="/register?role=kota" className="inline-block bg-[#00A86B] text-white font-bold py-3 px-6 rounded-lg hover:brightness-90 transition shadow-sm">
+              Daftar Akun Kab/Kota
+            </Link>
+          </div>
+        );
+      default:
+        // --- PERBAIKAN: JIKA AKSES LANGSUNG, TAMPILKAN KEDUANYA ---
+        return (
+            <div className="mt-8 text-sm text-center">
+              <p className="text-gray-600 mb-4 font-medium">Belum punya akun Dinas?</p>
+              <div className="flex flex-col gap-3 justify-center sm:flex-row">
+                <Link href="/register?role=provinsi" className="px-4 py-2 border border-[#00A86B] text-[#00A86B] rounded-lg hover:bg-green-50 transition font-semibold">
+                  Daftar Provinsi
+                </Link>
+                <Link href="/register?role=kota" className="px-4 py-2 border border-[#00A86B] text-[#00A86B] rounded-lg hover:bg-green-50 transition font-semibold">
+                  Daftar Kab/Kota
+                </Link>
+              </div>
+            </div>
+        );
     }
-    
-    // Jika roleId=3 (DLH)
-    if (roleId === '3') {
-      const registerHref = `/register?jenis=${jenisId || '1'}`; // Default ke jenis 1
-
-      return (
-        <div className="mt-8 text-sm text-center">
-          <p className="text-gray-600 mb-4">Belum memiliki akun?</p>
-          <Link
-            href={registerHref}
-            // Gunakan warna hijau baru agar konsisten
-            className="inline-block bg-[#00A86B] text-white font-bold py-3 px-6 rounded-lg hover:brightness-90 transition duration-300 shadow-sm"
-          >
-            Daftar Sekarang
-          </Link>
-        </div>
-      );
-    }
-    
-    // Fallback jika roleId tidak ada
-    return (
-        <div className="mt-8 text-sm text-center">
-          <p className="text-gray-600 mb-4">
-            Silakan pilih peran Anda di <Link href="/" className="text-[#00A86B] hover:underline">halaman utama</Link>.
-          </p>
-        </div>
-    );
   };
 
   return (
-    <main className="flex flex-col items-center justify-center min-h-screen py-12 px-4 space-y-8">
-      
-      <div className="flex justify-center">
-        <SintaFullLogo />
-      </div>
-
-      <div className="bg-white p-8 sm:p-10 rounded-xl shadow-xl w-full max-w-md text-center border border-gray-300">
+    <div className="bg-white p-8 sm:p-10 rounded-xl shadow-xl w-full max-w-md text-center border border-gray-300">
         <h1 className="text-3xl font-bold text-gray-800 mb-8">Login</h1>
 
         {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
-            <span className="block sm:inline">{error}</span>
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4 text-left text-sm">
+            {error}
           </div>
         )}
         
-        {!roleId && (
-            <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded relative mb-4" role="alert">
-                <span className="block sm:inline">Pilih peran Anda di <Link href="/" className="font-bold hover:underline">halaman utama</Link> terlebih dahulu.</span>
-            </div>
-        )}
+        {/* Hapus Alert Kuning "Pilih peran" agar tidak mengganggu jika user mau langsung login */}
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Field Email */}
           <div>
-            <label htmlFor="email" className="block text-left text-sm font-medium text-gray-700">
-              Email
-            </label>
+            <label className="block text-left text-sm font-medium text-gray-700">Email</label>
             <input
-              type="email" id="email" value={email} onChange={(e) => setEmail(e.target.value)}
-              placeholder="Masukkan Email" required disabled={!roleId}
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-[#00A86B] focus:border-[#00A86B] sm:text-sm disabled:bg-gray-50"
+              type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+              placeholder="Masukkan Email" required 
+              // PERBAIKAN: Hapus disabled={!userType} agar bisa mengetik
+              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-[#00A86B] focus:border-[#00A86B] sm:text-sm"
             />
           </div>
 
-          {/* Field Password */}
           <div>
-            <label htmlFor="password" className="block text-left text-sm font-medium text-gray-700">
-              Password
-            </label>
+            <label className="block text-left text-sm font-medium text-gray-700">Password</label>
             <div className="mt-1 relative rounded-md shadow-sm">
               <input
                 type={showPassword ? "text" : "password"}
-                id="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••" required disabled={!roleId}
-                className="block w-full pr-10 pl-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-[#00A86B] focus:border-[#00A86B] sm:text-sm disabled:bg-gray-50"
+                value={password} onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••" required 
+                // PERBAIKAN: Hapus disabled={!userType}
+                className="block w-full pr-10 pl-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-[#00A86B] focus:border-[#00A86B] sm:text-sm"
               />
-              
-              {/* --- (PERBAIKAN #2) --- */}
-              {/* Tambahkan div onClick untuk ikon mata */}
-              <div
-                className="absolute inset-y-0 right-0 pr-3 flex items-center cursor-pointer"
-                onClick={() => setShowPassword(!showPassword)} // <-- Ini menggunakan setShowPassword
-              >
+              <div className="absolute inset-y-0 right-0 pr-3 flex items-center cursor-pointer" onClick={() => setShowPassword(!showPassword)}>
                 {showPassword ? <EyeOffIcon /> : <EyeIcon />}
               </div>
-              {/* --- (AKHIR PERBAIKAN #2) --- */}
-
             </div>
             <div className="text-right mt-2 text-sm">
-              <Link href="/lupa-password" className="font-semibold text-[#00A86B] hover:underline">
-                Lupa password?
-              </Link>
+              <Link href="/lupa-password" className="font-semibold text-[#00A86B] hover:underline">Lupa password?</Link>
             </div>
           </div>
 
-          {/* Tombol Login */}
-          <div>
-            <button
-              type="submit"
-              disabled={!roleId}
-              className="w-full bg-[#00A86B] text-white font-bold py-3 px-4 rounded-lg hover:brightness-90 transition duration-300 shadow-sm disabled:bg-gray-400 disabled:cursor-not-allowed"
-            >
-              Login
-            </button>
-          </div>
+          <button type="submit" disabled={isLoading} className="w-full bg-[#00A86B] text-white font-bold py-3 px-4 rounded-lg hover:brightness-90 transition duration-300 shadow-sm disabled:bg-gray-400">
+            {isLoading ? 'Memproses...' : 'Login'}
+          </button>
         </form>
 
-        {/* Bagian Daftar Dinamis */}
         {renderRegisterSection()}
+    </div>
+  );
+}
 
+export default function LoginPage() {
+  return (
+    <main className="flex flex-col items-center justify-center min-h-screen py-12 px-4 space-y-8">
+      <div className="flex justify-center">
+        <SintaFullLogo />
       </div>
+      <Suspense fallback={<div className="text-center">Memuat Form Login...</div>}>
+        <LoginForm />
+      </Suspense>
     </main>
   );
 }

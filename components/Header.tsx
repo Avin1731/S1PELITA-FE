@@ -1,4 +1,3 @@
-// components/Header.js
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
@@ -7,22 +6,48 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
 import SintaFullLogo from './SintaFullLogo';
 
-// --- Komponen Ikon ---
-const UserIcon = () => ( <svg className="w-8 h-8 text-gray-600" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-6-3a2 2 0 11-4 0 2 2 0 014 0zm-2 4a5 5 0 00-4.546 2.916A5.986 5.986 0 0010 16a5.986 5.986 0 004.546-2.084A5 5 0 0010 11z" clipRule="evenodd" /></svg> );
-const ChevronDownIcon = () => ( <svg className="w-4 h-4 ml-1 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg> );
-const DocumentIcon = () => ( <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg> );
-// --- Akhir Komponen Ikon ---
+// --- Tipe Data untuk Navigasi ---
+interface NavDropdownItem {
+  name: string;
+  href: string;
+  icon?: React.ComponentType<{ className?: string }>;
+}
 
+interface NavLink {
+  name: string;
+  href: string;
+  dropdown?: NavDropdownItem[];
+}
+
+// --- Komponen Ikon (Typed) ---
+const UserIcon = ({ className }: { className?: string }) => (
+  <svg className={className || "w-8 h-8 text-gray-600"} fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-6-3a2 2 0 11-4 0 2 2 0 014 0zm-2 4a5 5 0 00-4.546 2.916A5.986 5.986 0 0010 16a5.986 5.986 0 004.546-2.084A5 5 0 0010 11z" clipRule="evenodd" />
+  </svg>
+);
+
+const ChevronDownIcon = ({ className }: { className?: string }) => (
+  <svg className={className || "w-4 h-4 ml-1 text-gray-600"} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+  </svg>
+);
+
+const DocumentIcon = ({ className }: { className?: string }) => (
+  <svg className={className || "w-4 h-4 mr-2"} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+  </svg>
+);
+// --- Akhir Komponen Ikon ---
 
 export default function Header() {
   const { user, loading, logout } = useAuth();
   const pathname = usePathname();
   const [isProfileOpen, setProfileOpen] = useState(false);
-  const profileRef = useRef(null);
+  const profileRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    function handleClickOutside(event) {
-      if (profileRef.current && !profileRef.current.contains(event.target)) {
+    function handleClickOutside(event: MouseEvent) {
+      if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
         setProfileOpen(false);
       }
     }
@@ -30,16 +55,13 @@ export default function Header() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [profileRef]);
 
-  // Saat loading ATAU user belum ada (tapi tidak loading), tampilkan versi logout
+  // Saat loading ATAU user belum ada, tampilkan header minimal
   if (loading || !user || !user.role) { 
     return (
       <div className="w-full sticky top-0 z-50">
         <header className="bg-white border-b border-gray-200 px-4 py-2.5 w-full">
           <div className="flex justify-between items-center mx-auto max-w-screen-xl">
             <Link href="/"><SintaFullLogo size="small" /></Link>
-            
-            {/* --- BLOK LINK DAFTAR/LOGIN DIHAPUS DARI SINI --- */}
-            
           </div>
         </header>
         <div className="h-0.5 bg-[#00A86B]" />
@@ -47,10 +69,16 @@ export default function Header() {
     );
   }
 
-  // JIKA LOLOS, user DAN user.role PASTI ADA
-  let navLinks = [];
-  const userRoleName = user.role.name.toLowerCase(); 
+  // --- SAFE ACCESS USER ROLE (Fix Error toLowerCase) ---
+  let userRoleName = '';
+  if (typeof user.role === 'string') {
+      userRoleName = user.role.toLowerCase();
+  } else if (user.role && typeof user.role === 'object' && 'name' in user.role) {
+      userRoleName = user.role.name.toLowerCase();
+  }
+
   let baseHref = '';
+  let navLinks: NavLink[] = [];
 
   // 1. Tentukan Base Href
   if (userRoleName === 'admin') {

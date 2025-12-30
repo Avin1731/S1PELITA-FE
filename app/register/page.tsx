@@ -1,7 +1,6 @@
-// src/app/register/page.tsx
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import SintaFullLogo from '@/components/SintaFullLogo';
 import { useAuth } from '@/context/AuthContext';
@@ -9,7 +8,7 @@ import axios from '@/lib/axios';
 import { isAxiosError } from 'axios';
 import { useSearchParams } from 'next/navigation';
 
-// --- TAMBAHKAN KOMPONEN IKON MATA ---
+// --- KOMPONEN IKON ---
 const EyeIcon = () => (
   <svg className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -22,22 +21,28 @@ const EyeOffIcon = () => (
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
   </svg>
 );
-// --- AKHIR TAMBAHAN IKON ---
 
-// Tipe Data
-interface JenisDlh { id: number; name: string; }
-interface Province { id: string; name: string; }
-interface Regency { id: string; name: string; }
+// --- TIPE DATA ---
+interface Province { id: string; nama: string; }
+interface Regency { id: string; nama: string; }
 
-export default function RegisterPage() {
+// --- KONFIGURASI ROLE STRING ---
+const ROLE_PROVINSI = 'provinsi'; 
+const ROLE_KOTA = 'kabupaten/kota';
+
+function RegisterForm() {
   const { register } = useAuth();
   const searchParams = useSearchParams();
 
-  const jenisFromUrl = searchParams.get('jenis');
-  const jenisId = jenisFromUrl ? Number(jenisFromUrl) : null;
+  // Tangkap role target dari URL (?role=provinsi atau ?role=kota)
+  const roleTarget = searchParams.get('role'); 
+  
+  // Tentukan Value Role String (untuk validasi frontend)
+  const roleValueToSend = roleTarget === 'provinsi' ? ROLE_PROVINSI : (roleTarget === 'kota' ? ROLE_KOTA : null);
 
   // State Form
   const [namaDlh, setNamaDlh] = useState('');
+  const [kodeDinas, setKodeDinas] = useState(''); // <--- FIELD WAJIB DARI BACKEND
   const [provinsi, setProvinsi] = useState('');
   const [kabKota, setKabKota] = useState('');
   const [pesisir, setPesisir] = useState('');
@@ -50,87 +55,55 @@ export default function RegisterPage() {
   const [pageTitle, setPageTitle] = useState('Registrasi DLH');
   const [formError, setFormError] = useState<string | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [isFetchingRegencies, setIsFetchingRegencies] = useState(false);
-  const [showPassword, setShowPassword] = useState(false); // State mata sandi 1
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false); // State mata sandi 2
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   
-  // State Data Dropdown
+  // Data Dropdown
   const [provincesList, setProvincesList] = useState<Province[]>([]);
   const [regenciesList, setRegenciesList] = useState<Regency[]>([]);
 
-  // EFEK 1: Ambil Judul Halaman
-  useEffect(() => {
-    if (jenisId) {
-      setTimeout(() => {
-        setIsLoading(true);
-        setApiError(null);
-      }, 0);
+  // Boolean Helper
+  const isKabKota = roleTarget === 'kota';
 
-      axios.get('/api/jenis-dlh')
-        .then(res => {
-          const allJenis: JenisDlh[] = res.data;
-          const foundJenis = allJenis.find(j => j.id === jenisId);
-          if (foundJenis) {
-            setPageTitle(`Registrasi ${foundJenis.name}`);
-          } else {
-            setApiError("Jenis DLH tidak dikenali.");
-          }
-        })
-        .catch(err => {
-          console.error("Gagal mengambil jenis DLH:", err);
-          setApiError("Gagal memuat data halaman.");
-        })
-        .finally(() => {
-          setIsLoading(false);
-        });
-    } else {
-      setTimeout(() => {
-        setApiError("Jenis DLH tidak spesifik. Silakan kembali.");
-        setIsLoading(false);
-      }, 0);
-    }
-  }, [jenisId]);
-
-  // EFEK 2: Ambil Provinsi (Hanya sekali)
+  // EFEK 1: Set Judul Halaman
   useEffect(() => {
-    axios.get('/api/provinces')
-      .then(res => setProvincesList(res.data))
+    if (roleTarget === 'provinsi') setPageTitle('Registrasi Dinas Provinsi');
+    else if (roleTarget === 'kota') setPageTitle('Registrasi Dinas Kab/Kota');
+    else setApiError("Tipe akun tidak valid.");
+  }, [roleTarget]);
+
+  // EFEK 2: Fetch Provinsi
+  useEffect(() => {
+    axios.get<{ data: Province[] }>('/api/register/provinces')
+      .then(res => setProvincesList(res.data.data))
       .catch(err => {
-        console.error("Gagal mengambil provinsi:", err);
-        setApiError("Gagal memuat daftar provinsi.");
+        console.error("Gagal ambil provinsi:", err);
+        setApiError("Gagal memuat daftar provinsi. Pastikan koneksi backend aman.");
       });
   }, []);
 
-  // EFEK 3: Ambil Kab/Kota (saat 'provinsi' berubah)
+  // EFEK 3: Fetch Kab/Kota (Hanya jika role kota)
   useEffect(() => {
-    if (provinsi) {
-      setTimeout(() => {
-        setIsFetchingRegencies(true);
-        setKabKota('');
-        setRegenciesList([]);
-      }, 0);
+    if (provinsi && isKabKota) {
+      setIsFetchingRegencies(true);
+      setKabKota('');
+      setRegenciesList([]);
 
-      axios.get(`/api/regencies/${provinsi}`)
-        .then(res => {
-          setRegenciesList(res.data);
-        })
+      axios.get<{ data: Regency[] }>(`/api/register/regencies/${provinsi}`)
+        .then(res => setRegenciesList(res.data.data))
         .catch(err => {
-          console.error("Gagal mengambil kab/kota:", err);
+          console.error("Gagal ambil kota:", err);
           setApiError("Gagal memuat daftar kab/kota.");
         })
-        .finally(() => {
-          setIsFetchingRegencies(false);
-        });
+        .finally(() => setIsFetchingRegencies(false));
     } else {
-      setTimeout(() => {
-        setKabKota('');
-        setRegenciesList([]);
-      }, 0);
+      setKabKota('');
+      setRegenciesList([]);
     }
-  }, [provinsi]);
+  }, [provinsi, isKabKota]);
 
-  // Handler untuk input nomor telepon (hanya angka)
   const handleNomorTeleponChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     const numericValue = value.replace(/[^0-9]/g, '');
@@ -141,133 +114,124 @@ export default function RegisterPage() {
     e.preventDefault();
     setFormError(null);
 
+    // 1. Validasi Password
     if (password !== passwordConfirmation) {
       setFormError("Password dan Konfirmasi Password tidak cocok.");
       return;
     }
-    if (!jenisId) {
-      setFormError("Jenis DLH tidak valid.");
-      return;
-    }
-    if (jenisId === 2 && !kabKota) {
-      setFormError("Silakan pilih Kab/Kota Anda.");
+
+    // 2. Validasi Role URL
+    if (!roleValueToSend) {
+      setFormError("Tipe akun tidak valid.");
       return;
     }
 
+    // 3. LOGIKA PENENTUAN ID DINAS (CRUCIAL!)
+    // Backend membutuhkan 'id_dinas'.
+    // Jika user Provinsi -> 'id_dinas' adalah ID Provinsi.
+    // Jika user Kota -> 'id_dinas' adalah ID Kota.
+    const selectedDinasId = isKabKota ? kabKota : provinsi;
+
+    if (!selectedDinasId) {
+        setFormError("Silakan pilih Wilayah Dinas terlebih dahulu.");
+        return;
+    }
+
+    if (!kodeDinas) {
+        setFormError("Kode Dinas wajib diisi.");
+        return;
+    }
+
+    setIsLoading(true);
     try {
+      // --- KIRIM DATA KE BACKEND SESUAI AUTH CONTROLLER ---
       await register({
-        name: namaDlh,
+        name: namaDlh, // Dikirim sbg pelengkap
         email,
-        nomor_telepon: nomorTelepon,
+        nomor_telepon: nomorTelepon, // Dikirim sbg pelengkap (meski BE belum pakai, simpan di req)
         password,
         password_confirmation: passwordConfirmation,
-        role_id: 3,
-        jenis_dlh_id: jenisId,
+        
+        // --- FIELD UTAMA UNTUK BACKEND ---
+        id_dinas: selectedDinasId, // Mapped dari Dropdown
+        kode_dinas: kodeDinas,     // Input manual
+        role: roleValueToSend,     // String 'provinsi'/'kabupaten/kota'
+        // ---------------------------------
+        
         province_id: provinsi,
-        regency_id: kabKota || undefined,
+        regency_id: isKabKota ? kabKota : undefined, 
         pesisir: pesisir,
       });
+      // Redirect ke login ditangani di AuthContext jika sukses
     } catch (err: unknown) {
       if (isAxiosError(err)) {
         if (err.response?.data?.errors) {
           const errors = err.response.data.errors;
           const firstError = Object.values(errors)[0] as string[];
-          setFormError(firstError[0] || "Data yang Anda masukkan tidak valid.");
+          setFormError(firstError[0] || "Data tidak valid.");
+        } else if (err.response?.data?.message) {
+          setFormError(err.response.data.message);
         } else {
-          setFormError(err.response?.data?.message || 'Registrasi gagal.');
+          setFormError('Registrasi gagal.');
         }
       } else {
-        setFormError('Terjadi kesalahan yang tidak terduga.');
+        setFormError('Terjadi kesalahan sistem.');
       }
+    } finally {
+        setIsLoading(false);
     }
   };
 
   const pageError = apiError;
 
   return (
-    <main className="flex flex-col items-center justify-center min-h-screen py-12 px-4 space-y-8">
-      
-      <div className="flex justify-center">
-        <SintaFullLogo />
-      </div>
-
-      <div className="bg-white p-8 sm:p-10 rounded-xl shadow-xl w-full max-w-lg border border-gray-300">
+    <div className="bg-white p-8 sm:p-10 rounded-xl shadow-xl w-full max-w-lg border border-gray-300">
         <h1 className="text-3xl font-bold text-gray-800 mb-8 text-center">{pageTitle}</h1>
 
-        {pageError && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
-            <span className="block sm:inline">{pageError}</span>
-          </div>
-        )}
-        {formError && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
-            <span className="block sm:inline">{formError}</span>
-          </div>
-        )}
+        {pageError && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">{pageError}</div>}
+        {formError && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">{formError}</div>}
 
-        {!jenisId && !isLoading && (
-           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
-             <span className="block sm:inline">Jenis DLH tidak spesifik. Silakan kembali ke <Link href="/" className="font-bold hover:underline">halaman utama</Link>.</span>
+        {!roleTarget && !isLoading && (
+           <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded mb-4">
+             Tipe akun tidak spesifik. Kembali ke <Link href="/" className="font-bold underline">halaman utama</Link>.
            </div>
         )}
 
-        {isLoading ? (
-          <div className="text-center text-gray-500">Memuat form...</div>
-        ) : (
-          jenisId && !apiError && (
+        {roleTarget && !apiError && (
             <form onSubmit={handleSubmit} className="space-y-4">
               
               {/* Nama DLH */}
               <div>
-                <label htmlFor="namaDlh" className="block text-left text-sm font-medium text-gray-700">Nama DLH</label>
-                <input type="text" id="namaDlh" value={namaDlh} onChange={(e) => setNamaDlh(e.target.value)}
-                  placeholder="Masukkan Nama DLH" required
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-[#00A86B] focus:border-[#00A86B] sm:text-sm"
+                <label className="block text-sm font-medium text-gray-700">Nama DLH</label>
+                <input type="text" value={namaDlh} onChange={(e) => setNamaDlh(e.target.value)} required 
+                  placeholder="Contoh: DLH Jawa Barat / DLH Kota Bandung"
+                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-[#00A86B] sm:text-sm" 
                 />
               </div>
 
-              {/* Grid 2 Kolom */}
+              {/* Grid Wilayah */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Provinsi */}
                 <div>
-                  <label htmlFor="provinsi" className="block text-left text-sm font-medium text-gray-700">Provinsi</label>
-                  <select
-                    id="provinsi" value={provinsi} onChange={(e) => setProvinsi(e.target.value)} required
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-[#00A86B] focus:border-[#00A86B] sm:text-sm"
-                  >
-                    <option value="" disabled>-- Pilih Provinsi --</option>
-                    {provincesList.map(prov => (
-                      <option key={`prov-${prov.id}`} value={prov.id}>{prov.name}</option>
-                    ))}
+                  <label className="block text-sm font-medium text-gray-700">Provinsi</label>
+                  <select value={provinsi} onChange={(e) => setProvinsi(e.target.value)} required className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-[#00A86B] sm:text-sm">
+                    <option value="" disabled>-- Pilih --</option>
+                    {provincesList.map(prov => (<option key={prov.id} value={prov.id}>{prov.nama}</option>))}
                   </select>
                 </div>
 
-                {/* Kab/Kota (Hanya tampil jika jenisId=2) */}
-                {jenisId === 2 && (
+                {isKabKota && (
                   <div>
-                    <label htmlFor="kabKota" className="block text-left text-sm font-medium text-gray-700">Kab/Kota</label>
-                    <select
-                      id="kabKota" value={kabKota} onChange={(e) => setKabKota(e.target.value)} required
-                      disabled={!provinsi || isFetchingRegencies}
-                      className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-[#00A86B] focus:border-[#00A86B] sm:text-sm disabled:bg-gray-50"
-                    >
-                      <option value="" disabled>
-                        {isFetchingRegencies ? "Memuat..." : (provinsi ? "-- Pilih Kab/Kota --" : "-- Pilih Provinsi Dulu --")}
-                      </option>
-                      {regenciesList.map(reg => (
-                        <option key={`reg-${reg.id}`} value={reg.id}>{reg.name}</option>
-                      ))}
+                    <label className="block text-sm font-medium text-gray-700">Kab/Kota</label>
+                    <select value={kabKota} onChange={(e) => setKabKota(e.target.value)} required disabled={!provinsi || isFetchingRegencies} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-[#00A86B] sm:text-sm disabled:bg-gray-100">
+                      <option value="" disabled>{isFetchingRegencies ? "Memuat..." : "-- Pilih --"}</option>
+                      {regenciesList.map(reg => (<option key={reg.id} value={reg.id}>{reg.nama}</option>))}
                     </select>
                   </div>
                 )}
                 
-                {/* Memiliki Pesisir? */}
-                <div className={jenisId === 2 ? 'md:col-span-2' : ''}>
-                  <label htmlFor="pesisir" className="block text-left text-sm font-medium text-gray-700">Memiliki Pesisir?</label>
-                  <select
-                    id="pesisir" value={pesisir} onChange={(e) => setPesisir(e.target.value)} required
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-[#00A86B] focus:border-[#00A86B] sm:text-sm"
-                  >
+                <div className={isKabKota ? 'md:col-span-2' : ''}>
+                  <label className="block text-sm font-medium text-gray-700">Wilayah Pesisir?</label>
+                  <select value={pesisir} onChange={(e) => setPesisir(e.target.value)} required className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-[#00A86B] sm:text-sm">
                     <option value="" disabled>-- Pilih --</option>
                     <option value="Ya">Ya</option>
                     <option value="Tidak">Tidak</option>
@@ -275,97 +239,91 @@ export default function RegisterPage() {
                 </div>
               </div>
 
+              {/* INPUT BARU: Kode Dinas (Required by Backend) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Kode Dinas (Token Aktivasi)</label>
+                <input 
+                  type="text" 
+                  value={kodeDinas} 
+                  onChange={(e) => setKodeDinas(e.target.value)} 
+                  required 
+                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-[#00A86B] sm:text-sm" 
+                  placeholder="Masukkan kode unik dinas"
+                />
+                <p className="text-xs text-gray-500 mt-1">*Kode ini didapat dari Administrator Pusat</p>
+              </div>
+
               {/* Email */}
               <div>
-                <label htmlFor="email" className="block text-left text-sm font-medium text-gray-700">Email</label>
-                <input type="email" id="email" value={email} onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Masukkan Email" required
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-[#00A86B] focus:border-[#00A86B] sm:text-sm"
+                <label className="block text-sm font-medium text-gray-700">Email</label>
+                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required 
+                  placeholder="email@dinas.go.id"
+                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-[#00A86B] sm:text-sm" 
                 />
               </div>
-              
+
               {/* Nomor Telepon */}
               <div>
-                <label htmlFor="nomorTelepon" className="block text-left text-sm font-medium text-gray-700">Nomor Telepon</label>
-                <input
-                  type="tel"
-                  id="nomorTelepon"
-                  value={nomorTelepon}
-                  onChange={handleNomorTeleponChange} // Handler khusus
-                  placeholder="Masukkan Nomor Telepon (hanya angka)"
-                  required
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-[#00A86B] focus:border-[#00A86B] sm:text-sm"
+                <label className="block text-sm font-medium text-gray-700">Nomor Telepon</label>
+                <input type="tel" value={nomorTelepon} onChange={handleNomorTeleponChange} required 
+                  placeholder="08xxxxxxxxxx"
+                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-[#00A86B] sm:text-sm" 
                 />
               </div>
 
               {/* Password */}
               <div>
-                <label htmlFor="password" className="block text-left text-sm font-medium text-gray-700">Password</label>
-                <div className="mt-1 relative rounded-md shadow-sm">
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    id="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Minimal 8 karakter"
-                    required
-                    className="block w-full pr-10 pl-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-[#00A86B] focus:border-[#00A86B] sm:text-sm"
-                  />
-                  <div
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center cursor-pointer"
-                    onClick={() => setShowPassword(!showPassword)}
-                  >
-                    {showPassword ? <EyeOffIcon /> : <EyeIcon />}
-                  </div>
-                </div>
+                 <label className="block text-sm font-medium text-gray-700">Password</label>
+                 <div className="mt-1 relative rounded-md shadow-sm">
+                    <input type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} required className="block w-full pr-10 pl-3 py-2 border border-gray-300 rounded-md focus:ring-[#00A86B] sm:text-sm" placeholder="Min 8 karakter"/>
+                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center cursor-pointer" onClick={() => setShowPassword(!showPassword)}>
+                        {showPassword ? <EyeOffIcon /> : <EyeIcon />}
+                    </div>
+                 </div>
               </div>
 
               {/* Konfirmasi Password */}
               <div>
-                <label htmlFor="password_confirmation" className="block text-left text-sm font-medium text-gray-700">Konfirmasi Password</label>
-                <div className="mt-1 relative rounded-md shadow-sm">
-                  <input
-                    type={showConfirmPassword ? "text" : "password"}
-                    id="password_confirmation"
-                    value={passwordConfirmation}
-                    onChange={(e) => setPasswordConfirmation(e.target.value)}
-                    placeholder="Ulangi password"
-                    required
-                    className="block w-full pr-10 pl-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-[#00A86B] focus:border-[#00A86B] sm:text-sm"
-                  />
-                  <div
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center cursor-pointer"
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  >
-                    {showConfirmPassword ? <EyeOffIcon /> : <EyeIcon />}
-                  </div>
-                </div>
+                 <label className="block text-sm font-medium text-gray-700">Konfirmasi Password</label>
+                 <div className="mt-1 relative rounded-md shadow-sm">
+                    <input type={showConfirmPassword ? "text" : "password"} value={passwordConfirmation} onChange={(e) => setPasswordConfirmation(e.target.value)} required className="block w-full pr-10 pl-3 py-2 border border-gray-300 rounded-md focus:ring-[#00A86B] sm:text-sm" placeholder="Ulangi password"/>
+                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center cursor-pointer" onClick={() => setShowConfirmPassword(!showConfirmPassword)}>
+                        {showConfirmPassword ? <EyeOffIcon /> : <EyeIcon />}
+                    </div>
+                 </div>
               </div>
 
               {/* Tombol Register */}
               <div className="pt-4">
-                <button
-                  type="submit"
-                  disabled={!jenisId || isLoading || isFetchingRegencies}
-                  className="w-full bg-[#00A86B] text-white font-bold py-3 px-4 rounded-lg hover:brightness-90 transition duration-300 shadow-sm disabled:bg-gray-400"
-                >
-                  Daftar
+                <button type="submit" disabled={!roleTarget || isLoading || isFetchingRegencies} className="w-full bg-[#00A86B] text-white font-bold py-3 px-4 rounded-lg hover:brightness-90 transition duration-300 shadow-sm disabled:bg-gray-400">
+                  {isLoading ? 'Memproses...' : 'Daftar'}
                 </button>
               </div>
 
-              {/* Link kembali ke Login */}
+              {/* Link Kembali ke Login */}
               <div className="mt-6 text-sm text-center">
                 <p className="text-gray-600">
-                  Sudah memiliki akun?{' '}
-                  <Link href={jenisId ? `/login?role=3&jenis=${jenisId}` : '/login'} className="font-semibold text-[#00A86B] hover:underline">
+                  Sudah punya akun?{' '}
+                  <Link href={`/login?as=${roleTarget === 'provinsi' ? 'provinsi' : 'kota'}`} className="font-semibold text-[#00A86B] hover:underline">
                     Login di sini
                   </Link>
                 </p>
               </div>
             </form>
-          )
         )}
-      </div>
-    </main>
+    </div>
   );
+}
+
+export default function RegisterPage() {
+    return (
+      <main className="flex flex-col items-center justify-center min-h-screen py-12 px-4 space-y-8">
+        <div className="flex justify-center">
+          <SintaFullLogo />
+        </div>
+        <Suspense fallback={<div className="text-center">Memuat Form Registrasi...</div>}>
+          <RegisterForm />
+        </Suspense>
+      </main>
+    );
 }
