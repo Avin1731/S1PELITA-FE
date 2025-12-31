@@ -2,16 +2,14 @@
 
 import { FaUserShield, FaUserTie, FaUserCog } from "react-icons/fa";
 
-// Ekspor interface Log agar bisa digunakan di file lain
 export interface Log {
   id: number;
   user: string;
   role: 'dlh' | 'pusdatin' | 'admin';
   action: string;
-  target?: string; // Tambahan: Objek yang dikenai aksi
-  time: string;    // ✅ KITA GUNAKAN 'time'
+  target?: string;
+  time: string;
   status?: 'success' | 'warning' | 'danger' | 'info' | string;
-  // ✅ Izinkan undefined, jangan paksa string
   jenis_dlh?: 'provinsi' | 'kabkota'; 
   province_name?: string;
   regency_name?: string;
@@ -20,12 +18,14 @@ export interface Log {
 interface LastActivityCardProps {
   logs: Log[];
   showDlhSpecificColumns?: boolean;
+  showRegency?: boolean; // [BARU] Prop untuk kontrol kolom Kab/Kota
   theme?: 'slate' | 'blue' | 'green' | 'red';
 }
 
 export default function LastActivityCard({ 
   logs, 
   showDlhSpecificColumns = false, 
+  showRegency = true, // Default true
   theme = 'slate' 
 }: LastActivityCardProps) {
   
@@ -39,6 +39,8 @@ export default function LastActivityCard({
   };
 
   const themeColors = getThemeColors();
+  const cellBase = "py-4 px-4 text-sm align-middle border-b border-gray-100";
+  const headerBase = "py-3 px-4 text-left text-xs font-bold text-gray-800 uppercase tracking-wider border-b border-gray-200";
 
   return (
     <div>
@@ -51,39 +53,42 @@ export default function LastActivityCard({
           <table className="w-full">
             <thead className={themeColors.header}>
               <tr>
-                <th className="py-3 px-4 text-left text-xs font-bold text-gray-800 uppercase tracking-wider w-32">Waktu</th>
-                <th className="py-3 px-4 text-left text-xs font-bold text-gray-800 uppercase tracking-wider">User</th>
-                <th className="py-3 px-4 text-left text-xs font-bold text-gray-800 uppercase tracking-wider w-32">Role</th>
+                <th className={`${headerBase} w-48 whitespace-nowrap`}>Waktu</th>
+                <th className={`${headerBase} w-48 whitespace-nowrap`}>User</th>
+                <th className={`${headerBase} w-32 text-center`}>Role</th>
+                
+                {/* KOLOM KHUSUS DLH */}
                 {showDlhSpecificColumns && (
                   <>
-                    <th className="py-3 px-4 text-left text-xs font-bold text-gray-800 uppercase tracking-wider">Jenis DLH</th>
-                    <th className="py-3 px-4 text-left text-xs font-bold text-gray-800 uppercase tracking-wider">Provinsi</th>
-                    <th className="py-3 px-4 text-left text-xs font-bold text-gray-800 uppercase tracking-wider">Kab/Kota</th>
+                    <th className={`${headerBase} w-40`}>Provinsi</th>
+                    {/* Hanya tampilkan Kab/Kota jika showRegency true */}
+                    {showRegency && <th className={`${headerBase} w-40`}>Kab/Kota</th>}
                   </>
                 )}
-                <th className="py-3 px-4 text-left text-xs font-bold text-gray-800 uppercase tracking-wider">Aksi</th>
+                
+                <th className={`${headerBase} w-auto`}>Aksi / Keterangan</th>
               </tr>
             </thead>
 
-            <tbody className="divide-y divide-gray-200">
+            <tbody className="divide-y divide-gray-200 bg-white">
               {logs.length > 0 ? (
                 logs.map((log) => (
                   <tr key={log.id} className="hover:bg-gray-50 transition-colors">
-                    {/* Waktu */}
-                    <td className={`${themeColors.row} py-4 px-4 text-xs text-gray-500 font-medium`}>
+                    
+                    <td className={`${cellBase} text-gray-500 whitespace-nowrap font-medium text-xs`}>
                       {log.time}
                     </td>
 
-                    {/* User */}
-                    <td className={`${themeColors.row} py-4 px-4 text-sm text-gray-800 font-semibold`}>
-                      {log.user}
+                    <td className={`${cellBase} text-gray-800 font-semibold whitespace-nowrap`}>
+                      <div className="truncate max-w-[12rem]" title={log.user}>
+                        {log.user}
+                      </div>
                     </td>
 
-                    {/* Role + Icon */}
-                    <td className={`${themeColors.row} py-4 px-4 text-sm`}>
-                      <div className="flex items-center gap-2">
+                    <td className={`${cellBase} text-center`}>
+                      <div className="inline-flex items-center gap-2 px-2 py-1 rounded-full bg-white border border-gray-200 shadow-sm">
                         {getRoleIcon(log.role)}
-                        <span className={`font-medium text-xs uppercase ${getRoleColor(log.role)}`}>
+                        <span className={`font-bold text-[10px] uppercase ${getRoleColor(log.role)}`}>
                           {log.role}
                         </span>
                       </div>
@@ -92,37 +97,36 @@ export default function LastActivityCard({
                     {/* Kolom Spesifik DLH */}
                     {showDlhSpecificColumns && (
                       <>
-                        <td className={`${themeColors.row} py-4 px-4 text-sm text-gray-700`}>
-                          {log.jenis_dlh === 'provinsi' ? 'Provinsi' : 
-                           log.jenis_dlh === 'kabkota' ? 'Kab/Kota' : '-'}
-                        </td>
-                        <td className={`${themeColors.row} py-4 px-4 text-sm text-gray-700`}>
+                        <td className={`${cellBase} text-gray-600`}>
                           {log.province_name || '-'}
                         </td>
-                        <td className={`${themeColors.row} py-4 px-4 text-sm text-gray-700`}>
-                          {log.regency_name || '-'}
-                        </td>
+                        {showRegency && (
+                          <td className={`${cellBase} text-gray-600`}>
+                            {log.regency_name || '-'}
+                          </td>
+                        )}
                       </>
                     )}
 
-                    {/* Aksi & Target */}
-                    <td className={`${themeColors.row} py-4 px-4 text-sm`}>
+                    <td className={`${cellBase} text-gray-700`}>
                       <div className="flex flex-col">
-                        <span className="text-gray-800 font-medium">
+                        <span className="font-semibold text-gray-900">
                           {log.action}
                         </span>
                         {log.target && log.target !== '-' && (
-                          <span className="text-xs text-gray-500 mt-0.5 italic">
-                            Target: {log.target}
+                          <span className="text-xs text-gray-500 mt-1 italic flex items-center gap-1">
+                            Target: <span className="bg-gray-100 px-1 rounded text-gray-700 not-italic">{log.target}</span>
                           </span>
                         )}
                       </div>
                     </td>
+
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={showDlhSpecificColumns ? 7 : 4} className="py-8 text-center text-gray-500">
+                  {/* Adjust colspan agar loading text tetap di tengah */}
+                  <td colSpan={showDlhSpecificColumns ? (showRegency ? 6 : 5) : 4} className="py-12 text-center text-gray-400 italic bg-gray-50">
                     Belum ada aktivitas tercatat.
                   </td>
                 </tr>
@@ -146,9 +150,9 @@ function getRoleColor(role: string) {
 
 function getRoleIcon(role: string) {
   switch (role) {
-    case 'dlh': return <FaUserTie className="text-blue-600 text-base" />;
-    case 'pusdatin': return <FaUserCog className="text-green-600 text-base" />;
-    case 'admin': return <FaUserShield className="text-red-600 text-base" />;
+    case 'dlh': return <FaUserTie className="text-blue-600 text-sm" />;
+    case 'pusdatin': return <FaUserCog className="text-green-600 text-sm" />;
+    case 'admin': return <FaUserShield className="text-red-600 text-sm" />;
     default: return null;
   }
 }

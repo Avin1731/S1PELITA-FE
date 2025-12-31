@@ -1,97 +1,90 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { User } from '@/context/AuthContext';
 import InnerNav from '@/components/InnerNav';
 import UserTable from '@/components/UserTable';
 import Pagination from '@/components/Pagination';
-import Link from 'next/link';
+import StatCard from '@/components/StatCard';
 import axios from '@/lib/axios';
-import { FiSearch } from 'react-icons/fi'; 
+import { FiSearch } from 'react-icons/fi';
+import Link from 'next/link';
 
 const USERS_PER_PAGE = 25;
 
-// 🎨 Warna per-card untuk StatCard biasa
+// Interface Data User
+interface ApiUser {
+  id: number;
+  email: string;
+  role: string;
+  is_active: number | boolean;
+  dinas?: {
+    id: number;
+    nama_dinas: string;
+    type: string;
+    region?: {
+        nama_region: string;
+    }
+  };
+  province_name?: string;
+  regency_name?: string;
+  display_name?: string;
+}
+
+// 🎨 Warna Stat Card
 const statCardColors = [
-  { bg: 'bg-blue-50', border: 'border-blue-300', titleColor: 'text-blue-600', valueColor: 'text-blue-800' },
-  { bg: 'bg-blue-50', border: 'border-blue-300', titleColor: 'text-blue-600', valueColor: 'text-blue-800' },
-  { bg: 'bg-green-50', border: 'border-green-300', titleColor: 'text-green-600', valueColor: 'text-green-800' },
-  { bg: 'bg-red-50', border: 'border-red-300', titleColor: 'text-red-600', valueColor: 'text-red-800' },
+  { bg: 'bg-slate-50', border: 'border-slate-300', titleColor: 'text-slate-600', valueColor: 'text-slate-800' }, 
+  { bg: 'bg-blue-50', border: 'border-blue-300', titleColor: 'text-blue-600', valueColor: 'text-blue-800' },     
+  { bg: 'bg-blue-50', border: 'border-blue-300', titleColor: 'text-blue-600', valueColor: 'text-blue-800' },     
+  { bg: 'bg-green-50', border: 'border-green-300', titleColor: 'text-green-600', valueColor: 'text-green-800' }, 
+  { bg: 'bg-red-50', border: 'border-red-300', titleColor: 'text-red-600', valueColor: 'text-red-800' },       
 ];
 
-// Komponen StatCard dengan Progress Bar
-const ProgressStatCard = ({ title, current, max, color = 'blue' }: { title: string; current: number; max: number; color?: 'blue' | 'green' | 'red' }) => {
-  const percentage = Math.min(100, (current / max) * 100);
-  const colorClasses = {
-    blue: { bar: 'bg-blue-500', border: 'border-blue-300', text: 'text-blue-600' },
-    green: { bar: 'bg-green-500', border: 'border-green-300', text: 'text-green-600' },
-    red: { bar: 'bg-red-500', border: 'border-red-300', text: 'text-red-600' },
-  };
-
-  const selectedColors = colorClasses[color];
-
-  return (
-    <div className={`bg-white rounded-xl shadow-sm border ${selectedColors.border} p-6 h-full flex flex-col`}>
-      <div>
-        <h3 className={`text-sm font-medium ${selectedColors.text} mb-1`}>{title}</h3>
-        <p className="text-2xl font-bold text-gray-900">{current} / {max}</p>
-      </div>
-      <div className="mt-auto">
-        <div className="mt-3 w-full bg-gray-200 rounded-full h-2.5">
-          <div
-            className={`h-2.5 rounded-full ${selectedColors.bar}`}
-            style={{ width: `${percentage}%` }}
-          ></div>
-        </div>
-      </div>
-    </div>
-  );
-};
+type TabValue = 'all' | 'dlh' | 'pusdatin' | 'admin';
+type DlhTabValue = 'provinsi' | 'kabkota';
 
 export default function UsersAktifPage() {
   const [currentPage, setCurrentPage] = useState(1);
-  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // Tab state
-  const [activeTab, setActiveTab] = useState('dlh');
-  const [activeDlhTab, setActiveDlhTab] = useState('provinsi');
   
-  // Search state
+  const [allUsers, setAllUsers] = useState<ApiUser[]>([]);
+  
+  // [UBAH] Default activeTab jadi 'dlh' karena 'all' dihapus dari UI
+  const [activeTab, setActiveTab] = useState<TabValue>('dlh');
+  const [activeDlhTab, setActiveDlhTab] = useState<DlhTabValue>('provinsi');
   const [searchTerm, setSearchTerm] = useState('');
 
   const [stats, setStats] = useState({
-    dlhProvinsi: 0,
-    dlhKabKota: 0,
+    total: 0,
+    provinsi: 0,
+    kabkota: 0,
     pusdatin: 0,
-    admin: 0,
+    admin: 0
   });
 
-  // --- Fetch ---
+  // 1. Fetch All Users
   useEffect(() => {
     const fetchUsers = async () => {
+      setLoading(true);
       try {
-        const res = await axios.get('/api/admin/users/aktif');
-        const data: User[] = res.data;
-
-        const dlhProvinsi = data.filter(
-          (u: User) => u.role?.name === 'DLH' && u.jenis_dlh?.name === 'DLH Provinsi'
-        );
-        const dlhKabKota = data.filter(
-          (u: User) => u.role?.name === 'DLH' && u.jenis_dlh?.name === 'DLH Kab-Kota'
-        );
-        const pusdatin = data.filter((u: User) => u.role?.name === 'Pusdatin');
-        const admin = data.filter((u: User) => u.role?.name === 'Admin');
-
-        setUsers(data);
-        setStats({
-          dlhProvinsi: dlhProvinsi.length,
-          dlhKabKota: dlhKabKota.length,
-          pusdatin: pusdatin.length,
-          admin: admin.length,
+        const res = await axios.get(`/api/admin/all/approved`, {
+          params: { per_page: 2000 } 
         });
+
+        const data = res.data.data;
+        setAllUsers(data);
+
+        // Hitung Statistik
+        setStats({
+          total: data.length,
+          provinsi: data.filter((u: ApiUser) => u.dinas?.type === 'provinsi' || u.role === 'provinsi').length,
+          kabkota: data.filter((u: ApiUser) => u.dinas?.type === 'kabupaten/kota' || u.role === 'kabupaten/kota').length,
+          pusdatin: data.filter((u: ApiUser) => u.role === 'pusdatin').length,
+          admin: data.filter((u: ApiUser) => u.role === 'admin').length
+        });
+
       } catch (e) {
-        console.error('Gagal mengambil data user aktif:', e);
+        console.error('Gagal mengambil data user:', e);
+        setAllUsers([]);
       } finally {
         setLoading(false);
       }
@@ -100,186 +93,208 @@ export default function UsersAktifPage() {
     fetchUsers();
   }, []);
 
-  // --- Filter berdasarkan Tab DAN Search ---
-  const filteredUsers = () => {
-    // PERBAIKAN: Tambahkan tipe eksplisit ': User[]' di sini
-    let result: User[] = []; 
+  // 2. Logic Filter
+  const getFilteredUsers = () => {
+    let filtered = allUsers;
 
-    // 1. Filter by Tab/Role
     if (activeTab === 'dlh') {
-      result = activeDlhTab === 'provinsi'
-        ? users.filter((u) => u.jenis_dlh?.name === 'DLH Provinsi')
-        : users.filter((u) => u.jenis_dlh?.name === 'DLH Kab-Kota');
+      if (activeDlhTab === 'provinsi') {
+        filtered = filtered.filter(u => u.role === 'provinsi' || u.dinas?.type === 'provinsi');
+      } else {
+        filtered = filtered.filter(u => u.role === 'kabupaten/kota' || u.dinas?.type === 'kabupaten/kota');
+      }
     } else if (activeTab === 'pusdatin') {
-      result = users.filter((u) => u.role?.name === 'Pusdatin');
+      filtered = filtered.filter(u => u.role === 'pusdatin');
     } else if (activeTab === 'admin') {
-      result = users.filter((u) => u.role?.name === 'Admin');
+      filtered = filtered.filter(u => u.role === 'admin');
     }
 
-    // 2. Filter by Search Term
     if (searchTerm) {
-      const lowerTerm = searchTerm.toLowerCase();
-      result = result.filter(user => 
-        user.name.toLowerCase().includes(lowerTerm) || 
-        user.email.toLowerCase().includes(lowerTerm)
+      const lowerSearch = searchTerm.toLowerCase();
+      filtered = filtered.filter(u => 
+        u.email.toLowerCase().includes(lowerSearch) ||
+        (u.display_name && u.display_name.toLowerCase().includes(lowerSearch)) ||
+        (u.dinas?.nama_dinas && u.dinas.nama_dinas.toLowerCase().includes(lowerSearch))
       );
     }
 
-    return result;
+    return filtered;
   };
 
-  // --- Pagination ---
-  const totalPages = Math.ceil(filteredUsers().length / USERS_PER_PAGE);
+  const filteredUsers = getFilteredUsers();
+  const totalPages = Math.ceil(filteredUsers.length / USERS_PER_PAGE);
+  const paginatedUsers = filteredUsers.slice(
+    (currentPage - 1) * USERS_PER_PAGE,
+    currentPage * USERS_PER_PAGE
+  );
 
-  const paginatedUsers = () => {
-    const start = (currentPage - 1) * USERS_PER_PAGE;
-    return filteredUsers().slice(start, start + USERS_PER_PAGE);
-  };
+  useEffect(() => { setCurrentPage(1); }, [activeTab, activeDlhTab, searchTerm]);
 
-  // Reset page & search ketika tab berubah
-  useEffect(() => {
-    setCurrentPage(1);
-    setSearchTerm(''); 
-  }, [activeTab, activeDlhTab]);
-
-  // Reset page ketika search berubah
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm]);
-
-  // Tabs
-  const dlhTabs = [
-    { label: 'Provinsi', value: 'provinsi' },
-    { label: 'Kab/Kota', value: 'kabkota' },
-  ];
-
+  // [UBAH] Tab "Semua" dihapus dari UI
   const mainTabs = [
     { label: 'DLH', value: 'dlh' },
     { label: 'Pusdatin', value: 'pusdatin' },
     { label: 'Admin', value: 'admin' },
   ];
 
-  const isDlhTabActive = activeTab === 'dlh';
-
-  // Stats Data
-  const statsData = [
-    { title: 'Total DLH Provinsi Aktif', value: stats.dlhProvinsi, max: 38, type: 'progress', color: 'blue' as const, link: '#dlh' },
-    { title: 'Total DLH Kab/Kota Aktif', value: stats.dlhKabKota, max: 514, type: 'progress', color: 'blue' as const, link: '#dlh' },
-    { title: 'Total Pusdatin Aktif', value: stats.pusdatin, type: 'simple', color: 'green' as const, link: '#pusdatin' },
-    { title: 'Total Admin Aktif', value: stats.admin, type: 'simple', color: 'red' as const, link: '#admin' },
+  const dlhTabs = [
+    { label: 'Provinsi', value: 'provinsi' },
+    { label: 'Kab/Kota', value: 'kabkota' },
   ];
 
-  if (loading) {
-    return (
-      <div className="p-8 space-y-8">
-        <h1 className="text-3xl font-extrabold text-green-800">Memuat Data...</h1>
-        <div className="h-64 bg-gray-100 animate-pulse rounded-xl"></div>
-      </div>
-    );
-  }
+  const isDlhTabActive = activeTab === 'dlh';
+
+  const getThemeColor = () => {
+    switch (activeTab) {
+      case 'all': return 'slate';
+      case 'dlh': return 'blue';
+      case 'pusdatin': return 'green';
+      case 'admin': return 'red';
+      default: return 'slate';
+    }
+  };
+
+  const currentTheme = getThemeColor();
+
+  const statsData = [
+    // Total User Aktif tetap ada kartunya, tapi link saya matikan ('#') dan cursor default
+    { title: 'Total User Aktif', value: stats.total.toString(), link: '#', color: statCardColors[0], isStatic: true },
+    { title: 'DLH Provinsi', value: stats.provinsi.toString(), link: '#provinsi', color: statCardColors[1] },
+    { title: 'DLH Kab/Kota', value: stats.kabkota.toString(), link: '#kabkota', color: statCardColors[2] },
+    { title: 'Tim Pusdatin', value: stats.pusdatin.toString(), link: '#pusdatin', color: statCardColors[3] },
+    { title: 'Administrator', value: stats.admin.toString(), link: '#admin', color: statCardColors[4] },
+  ];
 
   return (
     <div className="p-8 space-y-8">
-      {/* Header */}
       <header>
-        <h1 className="text-3xl font-extrabold text-green-800">Manajemen Pengguna Aktif</h1>
+        <h1 className="text-3xl font-extrabold text-slate-600">Manajemen Pengguna Aktif</h1>
         <p className="text-gray-600">Daftar pengguna yang telah diverifikasi dan aktif di sistem.</p>
       </header>
 
-      {/* Statistik */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-stretch">
-        {statsData.map((stat, index) => (
-          <Link
-            key={index}
-            href={stat.link}
-            onClick={(e) => {
-              e.preventDefault();
-              if (stat.link === '#dlh') {
-                setActiveTab('dlh');
-                setActiveDlhTab(stat.title.includes('Provinsi') ? 'provinsi' : 'kabkota');
-              } else if (stat.link === '#pusdatin') {
-                setActiveTab('pusdatin');
-              } else if (stat.link === '#admin') {
-                setActiveTab('admin');
-              }
-            }}
-            className="h-full block transition-transform hover:scale-105"
-          >
-            {stat.type === 'progress' ? (
-              <ProgressStatCard
+      {/* STAT CARDS */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        {statsData.map((stat, index) => {
+          // Jika isStatic (Total), render div biasa agar tidak bisa diklik
+          if (stat.isStatic) {
+            return (
+               <div key={index} className="h-full block cursor-default">
+                  <StatCard
+                    bgColor={stat.color.bg}
+                    borderColor={stat.color.border}
+                    titleColor={stat.color.titleColor}
+                    valueColor={stat.color.valueColor}
+                    title={stat.title}
+                    value={loading ? '...' : stat.value}
+                  />
+               </div>
+            )
+          }
+
+          return (
+            <Link 
+              key={index} 
+              href={stat.link}
+              onClick={(e) => {
+                e.preventDefault();
+                if (stat.link === '#provinsi') { setActiveTab('dlh'); setActiveDlhTab('provinsi'); }
+                else if (stat.link === '#kabkota') { setActiveTab('dlh'); setActiveDlhTab('kabkota'); }
+                else if (stat.link === '#pusdatin') setActiveTab('pusdatin');
+                else if (stat.link === '#admin') setActiveTab('admin');
+              }}
+              className="h-full block transition-transform hover:scale-105"
+            >
+              <StatCard
+                bgColor={stat.color.bg}
+                borderColor={stat.color.border}
+                titleColor={stat.color.titleColor}
+                valueColor={stat.color.valueColor}
                 title={stat.title}
-                current={stat.value ?? 0}
-                max={stat.max ?? 0}
-                color={stat.color}
+                value={loading ? '...' : stat.value}
               />
-            ) : (
-              <div className={`bg-white rounded-xl shadow-sm border ${statCardColors[index].border} p-6 h-full flex flex-col justify-center`}>
-                <h3 className={`text-sm font-medium ${statCardColors[index].titleColor} mb-1`}>{stat.title}</h3>
-                <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
-              </div>
-            )}
-          </Link>
-        ))}
+            </Link>
+          );
+        })}
       </div>
 
-      {/* Main Tabs */}
-      <InnerNav tabs={mainTabs} activeTab={activeTab} onChange={setActiveTab} />
-
-      {/* DLH Sub Tabs */}
-      {activeTab === 'dlh' && (
-        <InnerNav
-          tabs={dlhTabs}
-          activeTab={activeDlhTab}
-          onChange={setActiveDlhTab}
-          className="mt-0"
+      {/* TABS & SEARCH */}
+      <div>
+        <InnerNav 
+            tabs={mainTabs} 
+            activeTab={activeTab} 
+            onChange={(val) => setActiveTab(val as TabValue)} 
+            activeColor={currentTheme}
         />
-      )}
 
-      {/* --- SEARCH BAR --- */}
-      <div className="flex items-center mb-4">
-        <div className="relative flex-1 max-w-md">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <FiSearch className="text-gray-400" />
-          </div>
-          <input
-            type="text"
-            placeholder={`Cari nama atau email ${activeTab === 'dlh' ? (activeDlhTab === 'provinsi' ? 'DLH Provinsi' : 'DLH Kab/Kota') : activeTab}...`}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all outline-none"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+        {isDlhTabActive && (
+            <InnerNav
+                tabs={dlhTabs}
+                activeTab={activeDlhTab}
+                onChange={(val) => setActiveDlhTab(val as DlhTabValue)}
+                className="mt-0"
+                activeColor="blue"
+            />
+        )}
+        
+        <div className="mt-4 flex items-center bg-white p-2 rounded-xl border border-gray-200 shadow-sm">
+            <div className="relative flex-1">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <FiSearch className="text-gray-400" />
+                </div>
+                <input
+                    type="text"
+                    placeholder={`Cari nama, email, atau instansi...`}
+                    className="w-full pl-10 pr-4 py-2 bg-transparent border-none focus:ring-0 text-gray-700 placeholder-gray-400 outline-none"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                />
+            </div>
         </div>
       </div>
 
-      {/* Tabel User */}
-      <UserTable
-        users={paginatedUsers().map((u) => ({
-          id: u.id,
-          name: u.name,
-          email: u.email,
-          role: u.role?.name ?? '-',
-          jenis_dlh: u.jenis_dlh?.name,
-          status: 'aktif',
-          province: u.province_name ?? '-',
-          regency: u.regency_name ?? '-',
-        }))}
-        showLocation={isDlhTabActive}
-        showDlhSpecificColumns={isDlhTabActive}
-      />
+      {/* TABLE */}
+      {loading ? (
+        <div className="space-y-4">
+            <div className="h-12 bg-gray-100 rounded-lg animate-pulse w-full"></div>
+            <div className="h-64 bg-gray-100 rounded-xl animate-pulse w-full"></div>
+        </div>
+      ) : (
+        <>
+          <UserTable
+            users={paginatedUsers.map((u) => ({
+              id: u.id,
+              name: u.display_name || u.dinas?.nama_dinas || u.email.split('@')[0],
+              email: u.email,
+              role: u.role, 
+              jenis_dlh: u.dinas?.type ?? '-',
+              status: 'aktif',
+              province: u.province_name ?? '-',
+              regency: u.regency_name ?? '-',
+            }))}
+            // Munculkan lokasi jika bukan Pusdatin & Admin
+            showLocation={activeTab !== 'pusdatin' && activeTab !== 'admin'}
+            
+            // [BARU] Sembunyikan kolom Kab/Kota jika sedang buka tab Provinsi
+            showRegency={activeDlhTab !== 'provinsi'}
 
-      {/* Pagination */}
-      <div className="flex justify-between items-center mt-6">
-        <span className="text-sm text-gray-600">
-          Menampilkan {paginatedUsers().length} dari {filteredUsers().length} pengguna
-        </span>
+            showDlhSpecificColumns={false} 
+            theme={currentTheme}
+          />
 
-        <Pagination
-          currentPage={currentPage}
-          totalPages={totalPages}
-          onPageChange={setCurrentPage}
-          siblings={1}
-        />
-      </div>
+          <div className="flex justify-between items-center mt-6">
+            <span className="text-sm text-gray-600">
+              Menampilkan {paginatedUsers.length} dari total {filteredUsers.length} pengguna
+            </span>
+
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages > 0 ? totalPages : 1}
+              onPageChange={setCurrentPage}
+              siblings={1}
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 }
