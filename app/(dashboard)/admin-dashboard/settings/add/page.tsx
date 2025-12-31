@@ -13,7 +13,6 @@ const INITIAL_FORM_STATE = {
   email: '',
   password: '',
   password_confirmation: '',
-//   nip: '',      
   no_hp: '',    
 };
 
@@ -24,15 +23,6 @@ const INITIAL_MODAL_CONFIG = {
   showCancelButton: false,
   onConfirm: () => {},
   confirmLabel: 'Oke',
-};
-
-// Helper Log
-const logActivity = async (action: string, description: string) => {
-  try {
-    await axios.post('/api/logs', { action, description, role: 'admin' });
-  } catch (error) {
-    console.error('Gagal mencatat log:', error);
-  }
 };
 
 export default function AddPusdatinPage() {
@@ -70,21 +60,19 @@ export default function AddPusdatinPage() {
 
     try {
       const payload = {
-        name: formData.name,
+        name: formData.name, 
         email: formData.email,
         password: formData.password,
         password_confirmation: formData.password_confirmation,
-        // nip: formData.nip,
         nomor_telepon: formData.no_hp, 
         role: 'pusdatin', 
         status: 'aktif', 
       };
 
-      await axios.post('/api/admin/pusdatin', payload);
+      // Request ini akan mentrigger controller createPusdatin di Backend
+      // Di controller itulah Log Activity akan dicatat otomatis.
+      await axios.post('/api/admin/users/pusdatin', payload);
       
-      // --- LOGGING ---
-      logActivity('Membuat Akun', `Membuat akun Pusdatin baru: ${formData.name}`);
-
       setModalConfig({
         title: 'Berhasil',
         message: 'Akun Pusdatin berhasil dibuat.',
@@ -98,8 +86,17 @@ export default function AddPusdatinPage() {
     } catch (error) {
       console.error('Gagal membuat user:', error);
       
-      const err = error as AxiosError<{ message: string }>;
-      const errorMsg = err.response?.data?.message || 'Terjadi kesalahan saat membuat akun.';
+      const err = error as AxiosError<{ message: string | Record<string, string[]> }>;
+      let errorMsg = 'Terjadi kesalahan saat membuat akun.';
+
+      if (err.response?.data?.message) {
+          const msg = err.response.data.message;
+          if (typeof msg === 'object') {
+             errorMsg = Object.values(msg).flat().join(', ');
+          } else {
+             errorMsg = msg;
+          }
+      }
       
       setModalConfig({
         title: 'Gagal',
@@ -133,7 +130,6 @@ export default function AddPusdatinPage() {
       </header>
 
       <form onSubmit={handleSubmit} className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 space-y-6">
-        {/* Form fields tetap sama... (saya singkat agar ringkas) */}
         <div>
           <h2 className="text-lg font-semibold text-gray-800 mb-4 border-b pb-2">Informasi Akun</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -145,10 +141,6 @@ export default function AddPusdatinPage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
               <input required type="email" name="email" value={formData.email} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" placeholder="nama@email.com" />
             </div>
-            {/* <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">NIP (Opsional)</label>
-              <input type="text" name="nip" value={formData.nip} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" placeholder="Nomor Induk Pegawai" />
-            </div> */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Nomor HP</label>
               <input type="text" name="no_hp" value={formData.no_hp} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" placeholder="0812..." />
@@ -161,7 +153,7 @@ export default function AddPusdatinPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-              <input required type="password" name="password" value={formData.password} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" placeholder="Minimal 8 karakter" minLength={8} />
+              <input required type="password" name="password" value={formData.password} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none" placeholder="Minimal 6 karakter" minLength={6} />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Konfirmasi Password</label>

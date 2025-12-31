@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react'; // Tambah useCallback
+import { useState, useEffect, useCallback } from 'react';
 import { User } from '@/context/AuthContext'; 
 import StatCard from '@/components/StatCard'; 
 import UserTable from '@/components/UserTable'; 
@@ -9,9 +9,9 @@ import Link from 'next/link';
 import axios from '@/lib/axios';
 import { HiPlus } from 'react-icons/hi'; 
 import { FiSearch } from 'react-icons/fi'; 
-import UniversalModal from '@/components/UniversalModal'; // 1. Import Modal
+import UniversalModal from '@/components/UniversalModal';
 
-const USERS_PER_PAGE = 25; // (Sesuaikan kembali ke 25 atau 10)
+const USERS_PER_PAGE = 15; // Sesuai default controller
 
 const pusdatinColor = { 
   bg: 'bg-green-50', 
@@ -30,72 +30,53 @@ const INITIAL_MODAL_CONFIG = {
   cancelLabel: 'Batal',
 };
 
-// Helper Log
-const logActivity = async (action: string, description: string) => {
-  try {
-    await axios.post('/api/logs', { action, description, role: 'admin' });
-  } catch (error) { console.error('Log failed', error); }
-};
-
 export default function SettingsPage() {
+  // Pagination State (Server Side)
   const [currentPage, setCurrentPage] = useState(1);
-  const [allPusdatinUsers, setAllPusdatinUsers] = useState<User[]>([]); 
-  const [filteredPusdatinUsers, setFilteredPusdatinUsers] = useState<User[]>([]); 
+  const [lastPage, setLastPage] = useState(1);
+  const [totalUsers, setTotalUsers] = useState(0);
+
+  const [users, setUsers] = useState<User[]>([]); 
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState(''); 
-
-  const [stats, setStats] = useState({ pusdatin: 0 });
 
   // State untuk Aksi Delete
   const [isDeleting, setIsDeleting] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalConfig, setModalConfig] = useState(INITIAL_MODAL_CONFIG);
 
-  // --- Fetch Data (Dipisahkan agar bisa dipanggil ulang) ---
+  // --- Fetch Data ---
   const fetchUsers = useCallback(async () => {
+    setLoading(true);
     try {
-      // setLoading(true); // Opsional: jangan set loading full page saat refresh data delete
-      const res = await axios.get('/api/admin/users/aktif');
-      const data: User[] = res.data;
-
-      const pusdatinUsers = data.filter(
-        (u: User) => u.role?.name === 'Pusdatin'
-      );
-
-      setAllPusdatinUsers(pusdatinUsers);
-      // Kita tidak setFilteredPusdatinUsers langsung disini agar search term tetap berlaku
-      // Logic search di useEffect bawah akan menghandle pembaruan list
-      setStats({ pusdatin: pusdatinUsers.length });
+      // Endpoint sesuai AdminController@showUser untuk Pusdatin
+      const res = await axios.get('/api/admin/pusdatin/approved', {
+          params: {
+              page: currentPage,
+              search: searchTerm,
+              per_page: USERS_PER_PAGE
+          }
+      });
+      
+      const responseData = res.data;
+      setUsers(responseData.data); // Data array dari Laravel paginate
+      setLastPage(responseData.last_page);
+      setTotalUsers(responseData.total);
+      
     } catch (e) {
       console.error('Gagal mengambil data user Pusdatin:', e);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentPage, searchTerm]); // Dependency: page & search
 
+  // Debounce Search
   useEffect(() => {
-    fetchUsers();
+    const delayDebounceFn = setTimeout(() => {
+      fetchUsers();
+    }, 500);
+    return () => clearTimeout(delayDebounceFn);
   }, [fetchUsers]);
-
-  // --- Logic Search ---
-  useEffect(() => {
-    const lowerTerm = searchTerm.toLowerCase();
-    const filtered = allPusdatinUsers.filter(user =>
-      user.name.toLowerCase().includes(lowerTerm) ||
-      user.email.toLowerCase().includes(lowerTerm)
-    );
-    setFilteredPusdatinUsers(filtered);
-    // Jangan reset page jika hanya data yang berubah (bukan search term)
-    // Tapi reset jika search term berubah.
-  }, [searchTerm, allPusdatinUsers]);
-
-  // --- Pagination ---
-  const totalPages = Math.ceil(filteredPusdatinUsers.length / USERS_PER_PAGE);
-
-  const paginatedUsers = () => {
-    const start = (currentPage - 1) * USERS_PER_PAGE;
-    return filteredPusdatinUsers.slice(start, start + USERS_PER_PAGE);
-  };
 
   // --- Modal Helpers ---
   const closeModal = () => setIsModalOpen(false);
@@ -105,31 +86,28 @@ export default function SettingsPage() {
   const handleDeleteClick = (id: number) => {
     if (isDeleting) return;
 
-    const userToDelete = allPusdatinUsers.find(u => u.id === id);
+    const userToDelete = users.find(u => u.id === id);
 
     setModalConfig({
       title: 'Nonaktifkan Akun?',
-      message: `Apakah Anda yakin ingin menghapus akun "${userToDelete?.name}"? Tindakan ini permanen.`,
+      message: `Apakah Anda yakin ingin menghapus akun "${userToDelete?.email}"? Tindakan ini permanen.`,
       variant: 'danger',
       showCancelButton: true,
       confirmLabel: 'Hapus',
       cancelLabel: 'Batal',
-      onConfirm: () => performDelete(id, userToDelete?.name || ''),
+      onConfirm: () => performDelete(id),
     });
     setIsModalOpen(true);
   };
 
-  const performDelete = async (id: number, userName: string) => {
+  const performDelete = async (id: number) => {
     setIsDeleting(true);
-    setIsModalOpen(false); // Tutup modal konfirmasi
+    setIsModalOpen(false); 
 
     try {
-      // Sesuaikan endpoint dengan route API: DELETE /api/admin/pusdatin/{id}
-      await axios.delete(`/api/admin/pusdatin/${id}`);
+      // Endpoint sesuai AdminController@deleteUser
+      await axios.delete(`/api/admin/users/${id}`);
       
-      // Log Activity
-      logActivity('Menghapus Akun', `Menghapus akun Pusdatin: ${userName}`);
-
       // Modal Sukses
       setModalConfig({
         title: 'Berhasil Dihapus',
@@ -162,7 +140,7 @@ export default function SettingsPage() {
     }
   };
 
-  if (loading) {
+  if (loading && users.length === 0) {
     return (
       <div className="p-8 space-y-8">
         <h1 className="text-3xl font-extrabold text-green-800">Memuat Data...</h1>
@@ -186,7 +164,7 @@ export default function SettingsPage() {
             titleColor={pusdatinColor.titleColor}
             valueColor={pusdatinColor.valueColor}
             title="Total Akun Pusdatin"
-            value={stats.pusdatin.toString()}
+            value={totalUsers.toString()}
           />
         </div>
       </div>
@@ -198,10 +176,13 @@ export default function SettingsPage() {
           </div>
           <input
             type="text"
-            placeholder="Cari nama atau email Pusdatin..."
+            placeholder="Cari email Pusdatin..."
             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all"
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1); // Reset ke halaman 1 saat search berubah
+            }}
           />
         </div>
 
@@ -214,12 +195,11 @@ export default function SettingsPage() {
         </Link>
       </div>
 
-
-
       <UserTable
-        users={paginatedUsers().map((u) => ({
+        users={users.map((u) => ({
           id: u.id,
-          name: u.name,
+          // Karena DB users tidak punya kolom name, gunakan email atau fallback
+          name: u.name || u.email.split('@')[0], 
           email: u.email,
           role: 'Pusdatin', 
           jenis_dlh: '-',   
@@ -229,26 +209,23 @@ export default function SettingsPage() {
         }))}
         showLocation={false} 
         showDlhSpecificColumns={false} 
-        
-        // Props Baru untuk Delete
         onDelete={handleDeleteClick}
-        isSubmitting={isDeleting} // Kunci tombol saat proses delete berlangsung
+        isSubmitting={isDeleting}
       />
 
       <div className="flex justify-between items-center mt-6">
         <span className="text-sm text-gray-600">
-          Menampilkan {paginatedUsers().length} dari {filteredPusdatinUsers.length} pengguna
+          Menampilkan {users.length} dari total {totalUsers} pengguna
         </span>
 
         <Pagination
           currentPage={currentPage}
-          totalPages={totalPages}
+          totalPages={lastPage}
           onPageChange={setCurrentPage}
           siblings={1}
         />
       </div>
 
-      {/* Modal */}
       <UniversalModal
         isOpen={isModalOpen}
         onClose={closeModal}

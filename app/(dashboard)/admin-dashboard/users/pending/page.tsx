@@ -1,230 +1,130 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { User } from '@/context/AuthContext';
+import { useState, useEffect, useCallback } from 'react';
 import StatCard from '@/components/StatCard';
 import InnerNav from '@/components/InnerNav';
 import UserTable from '@/components/UserTable';
 import Pagination from '@/components/Pagination';
 import UniversalModal from '@/components/UniversalModal';
 import axios from '@/lib/axios';
+import { isAxiosError } from 'axios'; // [FIX] Import Helper isAxiosError
 import Link from 'next/link';
 
-const USERS_PER_PAGE = 25;
+// ... (Interface dan statCardColors tetap sama) ...
+interface ApiUser {
+  id: number;
+  email: string;
+  role: string;
+  is_active: number | boolean;
+  dinas?: { id: number; nama_dinas: string; type: string; };
+  province_name?: string;
+  regency_name?: string;
+}
 
 const statCardColors = [
   { bg: 'bg-gray-50', border: 'border-yellow-300', titleColor: 'text-yellow-600', valueColor: 'text-yellow-800' },
   { bg: 'bg-gray-50', border: 'border-yellow-300', titleColor: 'text-yellow-600', valueColor: 'text-yellow-800' },
 ];
 
-const INITIAL_MODAL_CONFIG = {
-  title: '',
-  message: '',
-  variant: 'warning' as 'success' | 'warning' | 'danger',
-  confirmLabel: 'Ya',
-  showCancelButton: true,
-  onConfirm: () => {},
-};
-
-// Helper function untuk logging (Fire and Forget)
-const logActivity = async (action: string, description: string) => {
-  try {
-    // Endpoint ini mungkin 404 sekarang, tapi kita siapkan kodenya
-    await axios.post('/api/logs', {
-      action,
-      description,
-      role: 'admin', // Hardcode sementara, nanti backend handle dari token
-    });
-  } catch (error) {
-    // Silent error: Jangan ganggu user jika log gagal
-    console.error('Gagal mencatat log:', error);
-  }
-};
-
 export default function UsersPendingPage() {
   const [currentPage, setCurrentPage] = useState(1);
-  const [users, setUsers] = useState<User[]>([]);
+  const [lastPage, setLastPage] = useState(1);
+  const [totalUsers, setTotalUsers] = useState(0);
+  const [users, setUsers] = useState<ApiUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'provinsi' | 'kabkota'>('provinsi');
-
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const [stats, setStats] = useState({
-    dlhProvinsi: 0,
-    dlhKabKota: 0,
+  const [stats, setStats] = useState({ dlhProvinsi: 0, dlhKabKota: 0 });
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalConfig, setModalConfig] = useState({
+      title: '', message: '', variant: 'warning' as 'success' | 'warning' | 'danger', onConfirm: () => {}, showCancel: true
   });
 
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalConfig, setModalConfig] = useState(INITIAL_MODAL_CONFIG);
-
-  // ---------------- FETCH USERS ---------------------
-  useEffect(() => {
-    const fetchUsers = async () => {
-      try {
-        const res = await axios.get('/api/admin/users/pending');
-        const data: User[] = res.data;
-
-        setUsers(data);
-        setStats({
-          dlhProvinsi: data.filter(u => u.jenis_dlh?.name === 'DLH Provinsi').length,
-          dlhKabKota: data.filter(u => u.jenis_dlh?.name === 'DLH Kab-Kota').length,
-        });
-      } catch (error) {
-        console.error('Gagal mengambil data user pending:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchUsers();
+  const fetchStats = useCallback(async () => {
+    try {
+        const [resProv, resKab] = await Promise.all([
+            axios.get('/api/admin/provinsi/0', { params: { per_page: 1 } }),
+            axios.get('/api/admin/kabupaten/0', { params: { per_page: 1 } })
+        ]);
+        setStats({ dlhProvinsi: resProv.data.total, dlhKabKota: resKab.data.total });
+    } catch (error) { console.error('Gagal mengambil statistik pending:', error); }
   }, []);
 
-  // ---------------- FILTER + PAGINATION -------------
-  const filteredUsers = users.filter((u) => {
-    const jenis = activeTab === 'provinsi' ? 'DLH Provinsi' : 'DLH Kab-Kota';
-    return u.jenis_dlh?.name === jenis;
-  });
+  const fetchUsers = useCallback(async () => {
+    setLoading(true);
+    try {
+      let roleParam: string = activeTab;
+      if (activeTab === 'kabkota') roleParam = 'kabupaten';
 
-  const totalPages = Math.ceil(filteredUsers.length / USERS_PER_PAGE);
-  const paginatedUsers = filteredUsers.slice(
-    (currentPage - 1) * USERS_PER_PAGE,
-    currentPage * USERS_PER_PAGE
-  );
+      const res = await axios.get(`/api/admin/${roleParam}/0`, { params: { page: currentPage, per_page: 25 } });
+      
+      setUsers(res.data.data);
+      setLastPage(res.data.last_page);
+      setTotalUsers(res.data.total);
+    } catch (error) {
+      console.error('Gagal mengambil data user pending:', error);
+      setUsers([]);
+    } finally { setLoading(false); }
+  }, [activeTab, currentPage]);
 
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [activeTab]);
-  
-  const closeModal = () => {
-    setIsModalOpen(false);
-    if (isSubmitting) {
-      setIsSubmitting(false);
-    }
-  };
-  
-  const resetModalConfig = () => {
-    setModalConfig(INITIAL_MODAL_CONFIG);
-  }
+  useEffect(() => { fetchUsers(); }, [fetchUsers]);
+  useEffect(() => { fetchStats(); }, [fetchStats]);
 
-  // ---------------- PERFORM ACTION -------------------
-  const performAction = async (action: 'approve' | 'reject', id: number) => {
-    if (!id) {
-      closeModal();
-      return;
-    }
-    
+  // [FIX] Perbaikan Logic Error Handling
+  const handleAction = async (action: 'approve' | 'reject', id: number) => {
     setIsSubmitting(true);
-
-    const originalUsers = [...users];
-    // Ambil data user untuk keperluan logging nama
-    const targetUser = users.find(u => u.id === id);
-    const optimisticUsers = users.filter(u => u.id !== id);
-    setUsers(optimisticUsers);
-
-    const key = activeTab === 'provinsi' ? 'dlhProvinsi' : 'dlhKabKota';
-    setStats(prev => ({ ...prev, [key]: prev[key] - 1 }));
-
     setIsModalOpen(false);
 
     try {
-      if (action === 'approve') {
-        await axios.post(`/api/admin/users/${id}/approve`);
-        
-        // --- LOGGING ---
-        logActivity('Menyetujui Akun', `Menyetujui akun DLH: ${targetUser?.name || 'Unknown'}`);
+        if (action === 'approve') {
+            await axios.patch(`/api/admin/users/approve/${id}`);
+        } else {
+            await axios.delete(`/api/admin/users/reject/${id}`);
+        }
+
+        fetchUsers();
+        fetchStats();
 
         setModalConfig({
-          title: 'Berhasil Approve',
-          message: 'Pengguna telah berhasil disetujui.',
-          variant: 'success',
-          confirmLabel: 'OK',
-          showCancelButton: false,
-          onConfirm: closeModal, 
+            title: 'Berhasil',
+            message: `User berhasil di${action === 'approve' ? 'setujui' : 'tolak'}.`,
+            variant: 'success',
+            showCancel: false,
+            onConfirm: () => setIsModalOpen(false)
         });
         setIsModalOpen(true);
 
-      } else {
-        await axios.delete(`/api/admin/users/${id}/reject`);
+    } catch (error: unknown) { // [FIX] Gunakan unknown
+        console.error(error);
         
-        // --- LOGGING ---
-        logActivity('Menolak Akun', `Menolak akun DLH: ${targetUser?.name || 'Unknown'}`);
+        // [FIX] Gunakan const dan pengecekan tipe yang aman
+        const errorMessage = isAxiosError(error) && error.response?.data?.message 
+            ? error.response.data.message 
+            : 'Terjadi kesalahan sistem.';
 
         setModalConfig({
-          title: 'Berhasil Reject',
-          message: 'Pengguna berhasil ditolak dan dihapus.',
-          variant: 'success',
-          confirmLabel: 'OK',
-          showCancelButton: false,
-          onConfirm: closeModal,
+            title: 'Gagal',
+            message: errorMessage,
+            variant: 'danger',
+            showCancel: false,
+            onConfirm: () => setIsModalOpen(false)
         });
         setIsModalOpen(true);
-      }
-
-    } catch (error) {
-      console.error(`Gagal ${action} pengguna:`, error);
-      setUsers(originalUsers);
-      
-      setModalConfig({
-        title: `Gagal ${action}`,
-        message: 'Terjadi kesalahan. Data dikembalikan ke kondisi semula.',
-        variant: 'danger',
-        confirmLabel: 'Tutup',
-        showCancelButton: false,
-        onConfirm: closeModal,
-      });
-      setIsModalOpen(true);
     } finally {
-      setIsSubmitting(false);
+        setIsSubmitting(false);
     }
   };
 
-  const handleApproveClick = (id: number) => {
-    if (isSubmitting) return;
-    
+  const confirmAction = (action: 'approve' | 'reject', id: number) => {
     setModalConfig({
-      title: 'Konfirmasi Approve',
-      message: 'Apakah Anda yakin ingin menyetujui pengguna ini?',
-      variant: 'warning',
-      confirmLabel: 'Approve',
-      showCancelButton: true,
-      onConfirm: () => {
-        if (isSubmitting) {
-            closeModal();
-            return;
-        }
-        performAction('approve', id);
-      },
+        title: `Konfirmasi ${action === 'approve' ? 'Persetujuan' : 'Penolakan'}`,
+        message: `Apakah Anda yakin ingin ${action === 'approve' ? 'mengaktifkan' : 'menghapus'} akun ini?`,
+        variant: action === 'approve' ? 'warning' : 'danger',
+        showCancel: true,
+        onConfirm: () => handleAction(action, id)
     });
     setIsModalOpen(true);
   };
-
-  const handleRejectClick = (id: number) => {
-    if (isSubmitting) return;
-
-    setModalConfig({
-      title: 'Konfirmasi Reject',
-      message: 'Apakah Anda yakin ingin menolak dan menghapus pengguna ini?',
-      variant: 'danger',
-      confirmLabel: 'Reject',
-      showCancelButton: true,
-      onConfirm: () => {
-         if (isSubmitting) {
-            closeModal();
-            return;
-         }
-        performAction('reject', id);
-      },
-    });
-    setIsModalOpen(true);
-  };
-
-  if (loading) {
-    return (
-      <div className="p-8 space-y-8">
-        <h1 className="text-3xl font-extrabold text-yellow-600">Memuat Data...</h1>
-        <div className="h-64 bg-gray-100 animate-pulse rounded-xl"></div>
-      </div>
-    );
-  }
 
   return (
     <div className="p-8 space-y-8">
@@ -234,34 +134,11 @@ export default function UsersPendingPage() {
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Link
-          href="#dlh"
-          onClick={(e: React.MouseEvent<HTMLAnchorElement>) => {
-            e.preventDefault();
-            setActiveTab("provinsi");
-          }}
-          className="block transition-transform duration-300 hover:scale-105"
-        >
-          <StatCard
-            {...statCardColors[0]}
-            title="Total DLH Provinsi Pending"
-            value={stats.dlhProvinsi}
-          />
+        <Link href="#" onClick={(e) => { e.preventDefault(); setActiveTab("provinsi"); setCurrentPage(1); }}>
+          <StatCard {...statCardColors[0]} title="DLH Provinsi (Pending)" value={stats.dlhProvinsi.toString()} />
         </Link>
-
-        <Link
-          href="#dlh"
-          onClick={(e: React.MouseEvent<HTMLAnchorElement>) => {
-            e.preventDefault();
-            setActiveTab("kabkota");
-          }}
-          className="block transition-transform duration-300 hover:scale-105"
-        >
-          <StatCard
-            {...statCardColors[1]}
-            title="Total DLH Kab/Kota Pending"
-            value={stats.dlhKabKota}
-          />
+        <Link href="#" onClick={(e) => { e.preventDefault(); setActiveTab("kabkota"); setCurrentPage(1); }}>
+          <StatCard {...statCardColors[1]} title="DLH Kab/Kota (Pending)" value={stats.dlhKabKota.toString()} />
         </Link>
       </div>
 
@@ -271,51 +148,51 @@ export default function UsersPendingPage() {
           { label: 'DLH Kab/Kota', value: 'kabkota' },
         ]}
         activeTab={activeTab}
-        onChange={(value) => setActiveTab(value as 'provinsi' | 'kabkota')}
+        onChange={(value) => { setActiveTab(value as 'provinsi' | 'kabkota'); setCurrentPage(1); }}
+        // [FIX] 'yellow' sekarang sudah valid
+        activeColor="yellow" 
       />
 
-      <UserTable
-        users={paginatedUsers.map((u) => ({
-          id: u.id,
-          name: u.name,
-          email: u.email,
-          role: u.role?.name ?? 'DLH',
-          jenis_dlh: u.jenis_dlh?.name,
-          status: 'pending',
-          province: u.province_name ?? '-',
-          regency: u.regency_name ?? '-',
-        }))}
-        onApprove={handleApproveClick}
-        onReject={handleRejectClick}
-        showLocation={true}
-        showDlhSpecificColumns={true}
-        isSubmitting={isSubmitting} 
-      />
+      {loading ? (
+        <div className="h-64 bg-gray-100 animate-pulse rounded-xl"></div>
+      ) : (
+        <UserTable
+          users={users.map((u) => ({
+            id: u.id,
+            name: u.dinas?.nama_dinas || u.email,
+            email: u.email,
+            role: u.role,
+            jenis_dlh: u.dinas?.type,
+            status: 'pending',
+            province: u.province_name ?? '-',
+            regency: u.regency_name ?? '-',
+          }))}
+          onApprove={(id) => confirmAction('approve', id)}
+          onReject={(id) => confirmAction('reject', id)}
+          showLocation={true}
+          showRegency={activeTab === 'kabkota'} 
+          showDlhSpecificColumns={false}
+          isSubmitting={isSubmitting} 
+          // [FIX] 'yellow' sekarang sudah valid
+          theme="yellow" 
+        />
+      )}
 
       <div className="flex justify-between items-center mt-6">
-        <span className="text-sm text-gray-600">
-          Menampilkan {paginatedUsers.length} dari {filteredUsers.length} pengguna
-        </span>
-
-        <Pagination
-          currentPage={currentPage}
-          totalPages={totalPages}
-          onPageChange={setCurrentPage}
-          siblings={1}
-        />
+        <span className="text-sm text-gray-600">Halaman {currentPage} dari {lastPage} <span className="font-semibold">(Total: {totalUsers} Pengguna)</span></span>
+        <Pagination currentPage={currentPage} totalPages={lastPage} onPageChange={setCurrentPage} siblings={1} />
       </div>
 
       <UniversalModal
         isOpen={isModalOpen}
-        onClose={closeModal} 
-        onExitComplete={resetModalConfig} 
+        onClose={() => setIsModalOpen(false)} 
         title={modalConfig.title}
         message={modalConfig.message}
         variant={modalConfig.variant}
         onConfirm={modalConfig.onConfirm}
-        confirmLabel={modalConfig.confirmLabel}
+        confirmLabel="Ya"
         cancelLabel="Batal"
-        showCancelButton={modalConfig.showCancelButton}
+        showCancelButton={modalConfig.showCancel}
       />
     </div>
   );
