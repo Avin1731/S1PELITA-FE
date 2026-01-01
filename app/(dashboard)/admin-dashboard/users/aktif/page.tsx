@@ -168,7 +168,7 @@ export default function UsersAktifPage() {
   return (
     <div className="p-8 space-y-8">
       <header>
-        <h1 className="text-3xl font-extrabold text-slate-600">Manajemen Pengguna Aktif</h1>
+        <h1 className="text-3xl font-extrabold text-green-800">Manajemen Pengguna Aktif</h1>
         <p className="text-gray-600">Daftar pengguna yang telah diverifikasi dan aktif di sistem.</p>
       </header>
 
