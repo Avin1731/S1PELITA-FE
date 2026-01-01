@@ -178,7 +178,7 @@ export default function UsersLogsPage() {
   return (
     <div className="space-y-8 p-8">
       <header>
-        <h1 className="text-3xl font-extrabold text-slate-600">Log Aktivitas Pengguna</h1>
+        <h1 className="text-3xl font-extrabold text-red-600">Log Aktivitas Pengguna</h1>
         <p className="text-gray-600">Catatan semua aktivitas yang dilakukan oleh pengguna di sistem.</p>
       </header>
 
